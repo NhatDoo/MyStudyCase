@@ -1,0 +1,40 @@
+version: '3.8'
+
+services:
+  # 1. Hệ thống Message Queue RabbitMQ
+  rabbitmq:
+    image: rabbitmq:3-management-alpine
+    ports:
+      - "5672:5672"
+      - "15672:15672" # Bảng điều khiển admin RabbitMQ: http://localhost:15672
+
+  # 2. Web API Server
+  api:
+    build: .
+    command: sh -c "npx prisma db push && npm run dev"
+    env_file:
+      - .env
+    environment:
+      - PORT=3000
+      - RABBITMQ_URL=amqp://rabbitmq
+    ports:
+      - "3000:3000"
+    depends_on:
+      - rabbitmq
+
+  # 3. Background Job Worker
+  worker:
+    build: .
+    command: npm run worker
+    env_file:
+      - .env
+    environment:
+      - RABBITMQ_URL=amqp://rabbitmq
+    volumes:
+      # Mount Docker socket để Worker điều khiển được Docker Host
+      - /var/run/docker.sock:/var/run/docker.sock
+      # Mount thư mục CWD bên ngoài Host vào trong Container báo cho Docker Host vị trí volume thực tế
+      - .:/app
+    depends_on:
+      - rabbitmq
+      - api

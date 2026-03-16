@@ -1,0 +1,74 @@
+generator client {
+  provider = "prisma-client-js"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum SessionStatus {
+  ACTIVE
+  CLOSED
+}
+
+enum ExecutionStatus {
+  QUEUED
+  WAITING
+  RUNNING
+  COMPLETED
+  FAILED
+  TIMEOUT
+}
+
+model CodeSession {
+  id         String   @id @default(uuid())
+  language   String
+  sourceCode String?
+  status     SessionStatus @default(ACTIVE)
+
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  executions Execution[]
+
+  @@map("code_sessions")
+}
+
+model Execution {
+  id              String   @id @default(uuid())
+
+  sessionId       String
+  status          ExecutionStatus @default(QUEUED)
+
+  stdout          String?
+  stderr          String?
+  executionTimeMs Int?
+
+  createdAt       DateTime @default(now())
+  startedAt       DateTime?
+  completedAt     DateTime?
+
+  session CodeSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  logs ExecutionLog[]
+
+  @@index([sessionId])
+  @@map("executions")
+}
+
+model ExecutionLog {
+  id          String   @id @default(uuid())
+
+  executionId String
+  status      ExecutionStatus
+  message     String?
+
+  createdAt   DateTime @default(now())
+
+  execution Execution @relation(fields: [executionId], references: [id], onDelete: Cascade)
+
+  @@index([executionId])
+  @@map("execution_logs")
+}
