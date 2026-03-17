@@ -1,7 +1,7 @@
 FROM node:22-alpine
 
-# Cài đặt docker-cli để Worker có thể spawn lệnh docker run
-RUN apk add --no-cache docker-cli
+# Cài python3 để Worker có thể chạy code Python trực tiếp (không cần Docker socket)
+RUN apk add --no-cache python3
 
 WORKDIR /app
 

@@ -1,6 +1,6 @@
 import amqp from 'amqplib';
 import { IExecutionRepository, executionRepository } from '../repositories/execution.repository';
-import { IExecutor, dockerExecutor } from '../executor/docker.executor';
+import { IExecutor, nativeExecutor } from '../executor/native.executor';
 import { ExecutionStatus } from '../generated/prisma';
 import { logger } from '../utils/logger';
 
@@ -208,7 +208,7 @@ class ExecutionWorker {
     }
 }
 
-export const executionWorker = new ExecutionWorker(executionRepository, dockerExecutor);
+export const executionWorker = new ExecutionWorker(executionRepository, nativeExecutor);
 
 // Boot the worker automatically when this file is run
 executionWorker.start();
