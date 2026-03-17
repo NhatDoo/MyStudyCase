@@ -5,7 +5,7 @@ import { ExecutionStatus } from '../generated/prisma';
 import { logger } from '../utils/logger';
 
 const RABBITMQ_URL = process.env.RABBITMQ_URL || 'amqp://localhost';
-const QUEUE_NAME = 'code_execution_queue';
+const QUEUE_NAME = 'execution_queue_v2';
 const DLX_NAME = 'code_execution_dlx';
 const DLQ_NAME = 'code_execution_dlq';
 const MAX_RETRIES = 3;
