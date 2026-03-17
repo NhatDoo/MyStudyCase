@@ -1,4 +1,5 @@
 import express, { Request, Response, NextFunction } from "express";
+import cors from "cors";
 import rateLimit from "express-rate-limit";
 import { CodeSessionController } from "./controllers/codeSession.controller";
 import { codeSessionService } from "./services/codeSession.service";
@@ -13,6 +14,9 @@ const app = express();
 const port = process.env.PORT || 3000;
 
 app.use(express.json());
+
+// Enable CORS for all origins (allows Swagger UI and external clients to work)
+app.use(cors());
 
 setupSwagger(app);
 
