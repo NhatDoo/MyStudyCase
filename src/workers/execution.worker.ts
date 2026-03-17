@@ -6,12 +6,20 @@ import { logger } from '../utils/logger';
 
 const RABBITMQ_URL = process.env.RABBITMQ_URL || 'amqp://localhost';
 const QUEUE_NAME = 'code_execution_queue';
+const DLX_NAME = 'code_execution_dlx';
+const DLQ_NAME = 'code_execution_dlq';
 const MAX_RETRIES = 3;
+
+// Reconnect config
+const RECONNECT_INITIAL_DELAY_MS = 2000;
+const RECONNECT_MAX_DELAY_MS = 30000;
+const RECONNECT_MULTIPLIER = 2;
 
 class ExecutionWorker {
     private connection: any = null;
     private channel: any = null;
     private isShuttingDown: boolean = false;
+    private reconnectDelay: number = RECONNECT_INITIAL_DELAY_MS;
 
     constructor(
         private readonly executionRepo: IExecutionRepository,
@@ -19,15 +27,54 @@ class ExecutionWorker {
     ) { }
 
     async start() {
+        if (this.isShuttingDown) return;
+
         try {
+            logger.info('Connecting to RabbitMQ...');
             this.connection = await amqp.connect(RABBITMQ_URL);
+
+            // Reset reconnect delay on successful connect
+            this.reconnectDelay = RECONNECT_INITIAL_DELAY_MS;
+
+            // Handle connection-level errors (e.g. heartbeat timeout)
+            this.connection.on('error', (err: Error) => {
+                logger.error({ err }, 'RabbitMQ connection error. Will attempt to reconnect...');
+                this.scheduleReconnect();
+            });
+
+            // Handle connection close (e.g. RabbitMQ server restart)
+            this.connection.on('close', () => {
+                if (this.isShuttingDown) return;
+                logger.warn('RabbitMQ connection closed unexpectedly. Will attempt to reconnect...');
+                this.scheduleReconnect();
+            });
+
             this.channel = await this.connection.createChannel();
+
+            // Handle channel-level errors
+            this.channel.on('error', (err: Error) => {
+                logger.error({ err }, 'RabbitMQ channel error.');
+            });
 
             // Limit to processing 5 messages concurrently
             await this.channel.prefetch(5);
 
+            // 1. Assert Dead Letter Exchange (DLX)
+            await this.channel.assertExchange(DLX_NAME, 'direct', { durable: true });
+
+            // 2. Assert Dead Letter Queue (DLQ)
+            await this.channel.assertQueue(DLQ_NAME, { durable: true });
+
+            // 3. Bind DLQ to DLX
+            await this.channel.bindQueue(DLQ_NAME, DLX_NAME, '');
+
+            // 4. Assert Main Queue with same DLX arguments as producer
             await this.channel.assertQueue(QUEUE_NAME, {
-                durable: true
+                durable: true,
+                arguments: {
+                    'x-dead-letter-exchange': DLX_NAME,
+                    'x-dead-letter-routing-key': ''
+                }
             });
 
             logger.info({ queue: QUEUE_NAME }, `[*] Worker is waiting for messages.`);
@@ -82,8 +129,26 @@ class ExecutionWorker {
             }, { noAck: false });
 
         } catch (error) {
-            logger.error({ err: error }, "Failed to start worker");
+            logger.error({ err: error }, 'Failed to start worker. Will attempt to reconnect...');
+            this.scheduleReconnect();
         }
+    }
+
+    private scheduleReconnect() {
+        if (this.isShuttingDown) return;
+
+        // Clean up old connection/channel references
+        this.channel = null;
+        this.connection = null;
+
+        logger.info({ retryInMs: this.reconnectDelay }, `Scheduling reconnect...`);
+
+        setTimeout(() => {
+            this.start();
+        }, this.reconnectDelay);
+
+        // Exponential backoff
+        this.reconnectDelay = Math.min(this.reconnectDelay * RECONNECT_MULTIPLIER, RECONNECT_MAX_DELAY_MS);
     }
 
     private async processJob(payload: { executionId: string, sessionId: string, language: string, sourceCode: string }) {
@@ -154,13 +219,13 @@ executionWorker.start();
 process.on('SIGINT', () => executionWorker.shutdown());
 process.on('SIGTERM', () => executionWorker.shutdown());
 
-// 2. Global Unhandled Error Catchers (Tránh văng sập server mà không lưu log)
+// 2. Global Unhandled Error Catchers — chỉ log, KHÔNG shutdown để worker tự reconnect
 process.on('uncaughtException', (error) => {
-    logger.fatal({ err: error }, 'Uncaught Exception detected! Shutting down systematically...');
-    executionWorker.shutdown();
+    logger.fatal({ err: error }, 'Uncaught Exception detected!');
+    // Do NOT call shutdown() here — let connection error/close events handle reconnect
 });
 
 process.on('unhandledRejection', (reason, promise) => {
-    logger.fatal({ reason, promise }, 'Unhandled Promise Rejection detected! Shutting down systematically...');
-    executionWorker.shutdown();
+    logger.fatal({ reason, promise }, 'Unhandled Promise Rejection detected!');
+    // Do NOT call shutdown() here — let connection error/close events handle reconnect
 });
