@@ -52,9 +52,17 @@ export class CodeSessionController {
         try {
             const { language, sourceCode } = req.body;
 
-            // Basic validation
-            if (!language || typeof language !== "string") {
-                res.status(400).json({ error: "Invalid or missing language" });
+            // Validate language against whitelist
+            const SUPPORTED_LANGUAGES = ['python', 'javascript', 'nodejs'];
+            if (!language || typeof language !== "string" || !SUPPORTED_LANGUAGES.includes(language)) {
+                res.status(400).json({ error: `Language not supported. Supported: ${SUPPORTED_LANGUAGES.join(', ')}` });
+                return;
+            }
+
+            // Validate sourceCode size (max 50KB)
+            const MAX_CODE_SIZE = 50_000;
+            if (sourceCode && typeof sourceCode === "string" && sourceCode.length > MAX_CODE_SIZE) {
+                res.status(400).json({ error: "Source code exceeds maximum size limit (50KB)" });
                 return;
             }
 
@@ -109,6 +117,13 @@ export class CodeSessionController {
 
             if (typeof sourceCode !== "string") {
                 res.status(400).json({ error: "Invalid sourceCode" });
+                return;
+            }
+
+            // Validate sourceCode size (max 50KB)
+            const MAX_CODE_SIZE = 50_000;
+            if (sourceCode.length > MAX_CODE_SIZE) {
+                res.status(400).json({ error: "Source code exceeds maximum size limit (50KB)" });
                 return;
             }
 

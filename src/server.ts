@@ -18,8 +18,15 @@ app.set('trust proxy', 1);
 
 app.use(express.json());
 
-// Enable CORS for all origins (allows Swagger UI and external clients to work)
-app.use(cors());
+// CORS config:
+// - Methods luôn bị giới hạn chỉ những gì API cần
+// - Origins: nếu có ALLOWED_ORIGINS trong env → whitelist; nếu không → open (cho Railway Swagger UI)
+const allowedOrigins = process.env.ALLOWED_ORIGINS?.split(',').map(o => o.trim());
+app.use(cors({
+    origin: allowedOrigins && allowedOrigins.length > 0 ? allowedOrigins : '*',
+    methods: ['GET', 'POST', 'PATCH'],
+    allowedHeaders: ['Content-Type', 'Authorization'],
+}));
 
 setupSwagger(app);
 
