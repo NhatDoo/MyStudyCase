@@ -13,6 +13,9 @@ const codeSessionController = new CodeSessionController(codeSessionService, exec
 const app = express();
 const port = process.env.PORT || 3000;
 
+// Trust the first proxy (required when running behind Docker/Railway/Nginx)
+app.set('trust proxy', 1);
+
 app.use(express.json());
 
 // Enable CORS for all origins (allows Swagger UI and external clients to work)
