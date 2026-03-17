@@ -1,3 +1,5 @@
+// Phương án tối ưu nhất nếu triển khai trên VPS hoặc Server chuyên dụng
+
 import { spawn } from 'child_process';
 import path from 'path';
 import crypto from 'crypto';
