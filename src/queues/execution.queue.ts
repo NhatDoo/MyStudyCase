@@ -1,7 +1,10 @@
 import amqp from 'amqplib';
+import { logger } from '../utils/logger';
 
-const RABBITMQ_URL = process.env.RABBITMQ_URL;
+const RABBITMQ_URL = process.env.RABBITMQ_URL || 'amqp://localhost';
 const QUEUE_NAME = 'code_execution_queue';
+const DLX_NAME = 'code_execution_dlx';
+const DLQ_NAME = 'code_execution_dlq';
 
 export interface IExecutionQueue {
     connect(): Promise<void>;
@@ -15,16 +18,30 @@ export class ExecutionQueue implements IExecutionQueue {
     async connect() {
         if (this.channel) return;
         try {
-            this.connection = await amqp.connect(RABBITMQ_URL!);
+            this.connection = await amqp.connect(RABBITMQ_URL);
             this.channel = await this.connection.createChannel();
+
+            // 1. Assert Dead Letter Exchange (DLX)
+            await this.channel.assertExchange(DLX_NAME, 'direct', { durable: true });
+
+            // 2. Assert Dead Letter Queue (DLQ)
+            await this.channel.assertQueue(DLQ_NAME, { durable: true });
+
+            // 3. Bind DLQ to DLX
+            await this.channel.bindQueue(DLQ_NAME, DLX_NAME, '');
+
+            // 4. Assert Main Queue configured with DLX
             await this.channel.assertQueue(QUEUE_NAME, {
-                durable: true
+                durable: true,
+                arguments: {
+                    'x-dead-letter-exchange': DLX_NAME,
+                    'x-dead-letter-routing-key': ''
+                }
             });
-            console.log("Connected to RabbitMQ and queue asserted");
+            logger.info("Connected to RabbitMQ and DLQ assigned successfully");
         } catch (error) {
-            console.error("Failed to connect to RabbitMQ", error);
-            // We might not want to throw immediately on startup, 
-            // but log the error. In production we should retry or exit.
+            logger.error({ err: error }, "Failed to connect to RabbitMQ");
+            // In production we should retry or exit.
         }
     }
 
@@ -44,9 +61,10 @@ export class ExecutionQueue implements IExecutionQueue {
         };
 
         this.channel.sendToQueue(QUEUE_NAME, Buffer.from(JSON.stringify(payload)), {
-            persistent: true
+            persistent: true,
+            headers: { 'x-retry-count': 0 } // Initialize retry count
         });
-        console.log(`Pushed job for execution ${executionId} to queue`);
+        logger.info({ executionId }, `Pushed job to queue`);
     }
 }
 

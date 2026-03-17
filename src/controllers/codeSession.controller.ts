@@ -1,6 +1,7 @@
 import { Request, Response } from "express";
 import { CodeSessionService } from "../services/codeSession.service";
 import { ExecutionService } from "../services/execution.service";
+import { logger } from "../utils/logger";
 
 export class CodeSessionController {
     constructor(
@@ -63,8 +64,8 @@ export class CodeSessionController {
                 session_id: session.id,
                 status: session.status,
             });
-        } catch (error) {
-            console.error("Error creating code session:", error);
+        } catch (error: any) {
+            logger.error({ err: error, body: req.body }, "Error creating code session");
             res.status(500).json({ error: "Internal server error" });
         }
     }
@@ -121,8 +122,8 @@ export class CodeSessionController {
                     throw err;
                 }
             }
-        } catch (error) {
-            console.error("Error updating session:", error);
+        } catch (error: any) {
+            logger.error({ err: error, session_id: req.params.session_id }, "Error updating session");
             res.status(500).json({ error: "Internal server error" });
         }
     }
@@ -170,7 +171,7 @@ export class CodeSessionController {
             if (error.message === "SESSION_NOT_FOUND") {
                 res.status(404).json({ error: "Session not found" });
             } else {
-                console.error("Error creating execution:", error);
+                logger.error({ err: error, session_id: req.params.session_id }, "Error creating execution");
                 res.status(500).json({ error: "Internal server error" });
             }
         }
@@ -227,7 +228,7 @@ export class CodeSessionController {
             if (error.message === "EXECUTION_NOT_FOUND") {
                 res.status(404).json({ error: "Execution not found" });
             } else {
-                console.error("Error getting execution:", error);
+                logger.error({ err: error, execution_id: req.params.execution_id }, "Error getting execution");
                 res.status(500).json({ error: "Internal server error" });
             }
         }
@@ -253,8 +254,8 @@ export class CodeSessionController {
                 typeof value === 'bigint' ? value.toString() : value
             );
             res.status(200).type('json').send(serialized);
-        } catch (error) {
-            console.error("Error monitoring slow jobs:", error);
+        } catch (error: any) {
+            logger.error({ err: error }, "Error monitoring slow jobs");
             res.status(500).json({ error: "Internal server error" });
         }
     }

@@ -1,10 +1,11 @@
-import express from "express";
+import express, { Request, Response, NextFunction } from "express";
 import rateLimit from "express-rate-limit";
 import { CodeSessionController } from "./controllers/codeSession.controller";
 import { codeSessionService } from "./services/codeSession.service";
 import { executionService } from "./services/execution.service";
 import { executionQueue } from "./queues/execution.queue";
 import { setupSwagger } from "./swagger";
+import { logger } from "./utils/logger";
 
 const codeSessionController = new CodeSessionController(codeSessionService, executionService);
 
@@ -27,8 +28,14 @@ app.post("/code-sessions/:session_id/run", runRateLimiter, (req, res) => codeSes
 app.get("/executions/slow-jobs", (req, res) => codeSessionController.getSlowJobs(req, res));
 app.get("/executions/:execution_id", (req, res) => codeSessionController.getExecution(req, res));
 
+// Global Error Handler
+app.use((err: Error, req: Request, res: Response, next: NextFunction) => {
+    logger.error({ err, url: req.url, method: req.method }, "Unhandled error occurred");
+    res.status(500).json({ error: "Internal server error" });
+});
+
 app.listen(port, async () => {
-    console.log(`Server is running on port ${port}`);
+    logger.info(`Server is running on port ${port}`);
     await executionQueue.connect();
-    console.log(`http://localhost:${port}/api-docs`);
+    logger.info(`Swagger docs available at http://localhost:${port}/api-docs`);
 });

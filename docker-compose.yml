@@ -25,6 +25,7 @@ services:
   # 3. Background Job Worker
   worker:
     build: .
+    restart: unless-stopped
     command: npm run worker
     env_file:
       - .env
