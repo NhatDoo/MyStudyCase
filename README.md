@@ -131,13 +131,21 @@ RABBITMQ_URL="amqp://localhost"
 ```bash
 npx prisma generate
 npx prisma db push   # Bỏ qua nếu DB đã có sẵn tables
-npm run dev
 ```
 
-**4. Ở màn hình Terminal mới (hoặc để Deploy), bật Background Worker:**
+**4. Chạy đồng thời API Server + Background Worker (1 lệnh duy nhất):**
+
+> Dùng `concurrently` để chạy cả 2 dịch vụ cùng lúc trong 1 terminal.
+
 ```bash
-npm run worker
+npm run start:all
 ```
+
+> Hoặc chạy riêng lẻ nếu cần debug từng phần:
+> ```bash
+> npm run dev      # Chỉ chạy API Server
+> npm run worker   # Chỉ chạy Background Worker
+> ```
 
 ---
 
