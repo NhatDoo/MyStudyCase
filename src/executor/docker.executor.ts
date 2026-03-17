@@ -11,7 +11,35 @@ interface ExecutionResult {
     memoryLimitExceeded: boolean;
 }
 
-export class DockerExecutor {
+export interface IExecutor {
+    execute(language: string, sourceCode: string): Promise<ExecutionResult>;
+}
+
+interface LanguageConfig {
+    extension: string;
+    image: string;
+    getCommandArgs: (fileName: string) => string[];
+}
+
+const SUPPORTED_LANGUAGES: Record<string, LanguageConfig> = {
+    python: {
+        extension: 'py',
+        image: 'python:3.9-alpine',
+        getCommandArgs: (fileName) => ['python', `/app/${fileName}`]
+    },
+    javascript: {
+        extension: 'js',
+        image: 'node:18-alpine',
+        getCommandArgs: (fileName) => ['node', `/app/${fileName}`]
+    },
+    nodejs: {
+        extension: 'js',
+        image: 'node:18-alpine',
+        getCommandArgs: (fileName) => ['node', `/app/${fileName}`]
+    }
+};
+
+export class DockerExecutor implements IExecutor {
     async execute(language: string, sourceCode: string): Promise<ExecutionResult> {
         return new Promise(async (resolve, reject) => {
             const tempDir = path.join(process.cwd(), 'tmp');
@@ -20,21 +48,15 @@ export class DockerExecutor {
             } catch (e) { }
 
             const fileId = crypto.randomUUID();
-            let fileName = '';
-            let image = '';
-            let commandArgs: string[] = [];
 
-            if (language === 'python') {
-                fileName = `main_${fileId}.py`;
-                image = 'python:3.9-alpine';
-                commandArgs = ['python', `/app/${fileName}`];
-            } else if (language === 'javascript' || language === 'nodejs') {
-                fileName = `main_${fileId}.js`;
-                image = 'node:18-alpine';
-                commandArgs = ['node', `/app/${fileName}`];
-            } else {
+            const config = SUPPORTED_LANGUAGES[language];
+            if (!config) {
                 return reject(new Error('Unsupported language: ' + language));
             }
+
+            const fileName = `main_${fileId}.${config.extension}`;
+            const image = config.image;
+            const commandArgs = config.getCommandArgs(fileName);
 
             const filePath = path.join(tempDir, fileName);
             await fs.writeFile(filePath, sourceCode);

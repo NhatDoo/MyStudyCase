@@ -1,25 +1,22 @@
-import { prisma } from "../db.client";
+import { ICodeSessionRepository, codeSessionRepository } from "../repositories/codeSession.repository";
 
 export class CodeSessionService {
+    constructor(private readonly codeSessionRepo: ICodeSessionRepository) { }
+
     async createSession(language: string, sourceCode?: string) {
-        const session = await prisma.codeSession.create({
-            data: {
-                language,
-                sourceCode: sourceCode || null,
-                status: "ACTIVE",
-            },
+        const session = await this.codeSessionRepo.create({
+            language,
+            sourceCode: sourceCode || null,
+            status: "ACTIVE",
         });
         return session;
     }
 
     async updateSession(sessionId: string, sourceCode: string) {
-        // Automatically throw if not found
-        const session = await prisma.codeSession.update({
-            where: { id: sessionId },
-            data: { sourceCode },
-        });
+        const session = await this.codeSessionRepo.update(sessionId, { sourceCode });
         return session;
     }
 }
 
-export const codeSessionService = new CodeSessionService();
+// Instantiate with dependency injection
+export const codeSessionService = new CodeSessionService(codeSessionRepository);

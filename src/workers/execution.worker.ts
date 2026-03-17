@@ -1,6 +1,6 @@
 import amqp from 'amqplib';
-import { executionRepository } from '../repositories/execution.repository';
-import { dockerExecutor } from '../executor/docker.executor';
+import { IExecutionRepository, executionRepository } from '../repositories/execution.repository';
+import { IExecutor, dockerExecutor } from '../executor/docker.executor';
 import { ExecutionStatus } from '../generated/prisma';
 
 const RABBITMQ_URL = process.env.RABBITMQ_URL || 'amqp://localhost';
@@ -9,6 +9,11 @@ const QUEUE_NAME = 'code_execution_queue';
 class ExecutionWorker {
     private connection: any = null;
     private channel: any = null;
+
+    constructor(
+        private readonly executionRepo: IExecutionRepository,
+        private readonly executor: IExecutor
+    ) { }
 
     async start() {
         try {
@@ -43,18 +48,18 @@ class ExecutionWorker {
         const startTime = new Date();
         try {
             // Update to WAITING via Repository when picked up by the worker
-            await executionRepository.update(payload.executionId, {
+            await this.executionRepo.update(payload.executionId, {
                 status: ExecutionStatus.WAITING,
             });
 
             // Update to RUNNING via Repository right before starting the container
-            await executionRepository.update(payload.executionId, {
+            await this.executionRepo.update(payload.executionId, {
                 status: ExecutionStatus.RUNNING,
                 startedAt: startTime
             });
 
             // Execute logic using Docker service
-            const result = await dockerExecutor.execute(payload.language, payload.sourceCode);
+            const result = await this.executor.execute(payload.language, payload.sourceCode);
 
             // Determine resulting status
             let finalStatus: ExecutionStatus = ExecutionStatus.COMPLETED;
@@ -67,7 +72,7 @@ class ExecutionWorker {
             }
 
             // Update record as finished
-            await executionRepository.update(payload.executionId, {
+            await this.executionRepo.update(payload.executionId, {
                 status: finalStatus,
                 stdout: result.stdout?.slice(0, 5000) ?? null,
                 stderr: result.stderr?.slice(0, 5000) ?? null,
@@ -78,7 +83,7 @@ class ExecutionWorker {
             console.log(`[v] Job ${payload.executionId} finished in ${result.executionTimeMs}ms (Status: ${finalStatus})`);
         } catch (error: any) {
             console.error(`[!] Job ${payload.executionId} strictly failed:`, error);
-            await executionRepository.update(payload.executionId, {
+            await this.executionRepo.update(payload.executionId, {
                 status: ExecutionStatus.FAILED,
                 stderr: String(error.message).slice(0, 5000),
                 completedAt: new Date()
@@ -87,7 +92,7 @@ class ExecutionWorker {
     }
 }
 
-export const executionWorker = new ExecutionWorker();
+export const executionWorker = new ExecutionWorker(executionRepository, dockerExecutor);
 
 // Boot the worker automatically when this file is run
 executionWorker.start();

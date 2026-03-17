@@ -1,7 +1,14 @@
 import { prisma } from "../db.client";
-import { ExecutionStatus, Prisma } from "../generated/prisma";
+import { ExecutionStatus, Prisma, Execution } from "../generated/prisma";
 
-class ExecutionRepository {
+export interface IExecutionRepository {
+    create(sessionId: string, status: ExecutionStatus): Promise<Execution>;
+    update(executionId: string, data: Prisma.ExecutionUpdateInput & { logMessage?: string }): Promise<Execution>;
+    findById(executionId: string): Promise<Execution | null>;
+    findSlowJobs(limit?: number): Promise<any>;
+}
+
+export class ExecutionRepository implements IExecutionRepository {
     async create(sessionId: string, status: ExecutionStatus) {
         return prisma.execution.create({
             data: {
@@ -49,7 +56,7 @@ class ExecutionRepository {
     }
 
     async findSlowJobs(limit: number = 20) {
-   
+
         return prisma.$queryRaw`
             SELECT id, "sessionId", status, "createdAt", "startedAt",
             EXTRACT(EPOCH FROM ("startedAt" - "createdAt")) * 1000 AS queue_delay_ms

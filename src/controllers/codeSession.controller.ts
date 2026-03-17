@@ -1,8 +1,12 @@
 import { Request, Response } from "express";
-import { codeSessionService } from "../services/codeSession.service";
-import { executionService } from "../services/execution.service";
+import { CodeSessionService } from "../services/codeSession.service";
+import { ExecutionService } from "../services/execution.service";
 
 export class CodeSessionController {
+    constructor(
+        private readonly codeSessionService: CodeSessionService,
+        private readonly executionService: ExecutionService
+    ) { }
 
     /**
      * @swagger
@@ -53,7 +57,7 @@ export class CodeSessionController {
                 return;
             }
 
-            const session = await codeSessionService.createSession(language, sourceCode);
+            const session = await this.codeSessionService.createSession(language, sourceCode);
 
             res.status(201).json({
                 session_id: session.id,
@@ -108,11 +112,10 @@ export class CodeSessionController {
             }
 
             try {
-                await codeSessionService.updateSession(session_id as string, sourceCode);
+                await this.codeSessionService.updateSession(session_id as string, sourceCode);
                 res.status(200).json({ message: "Updated successfully" });
             } catch (err: any) {
-                if (err.code === "P2025") {
-                    // Prisma RecordNotFound error code
+                if (err.message === "SESSION_NOT_FOUND") {
                     res.status(404).json({ error: "Session not found" });
                 } else {
                     throw err;
@@ -157,7 +160,7 @@ export class CodeSessionController {
     async runSession(req: Request, res: Response): Promise<void> {
         try {
             const { session_id } = req.params;
-            const execution = await executionService.createExecution(session_id as string);
+            const execution = await this.executionService.createExecution(session_id as string);
 
             res.status(200).json({
                 execution_id: execution.id,
@@ -211,7 +214,7 @@ export class CodeSessionController {
     async getExecution(req: Request, res: Response): Promise<void> {
         try {
             const { execution_id } = req.params;
-            const execution = await executionService.getExecution(execution_id as string);
+            const execution = await this.executionService.getExecution(execution_id as string);
 
             res.status(200).json({
                 execution_id: execution.id,
@@ -243,7 +246,7 @@ export class CodeSessionController {
      */
     async getSlowJobs(req: Request, res: Response): Promise<void> {
         try {
-            const slowJobs = await executionService.getSlowJobs();
+            const slowJobs = await this.executionService.getSlowJobs();
             // Since this is raw SQL, Prisma might return numbers as bigints or dates as objects depending on driver.
             // A simple JSON format works for us.
             const serialized = JSON.stringify(slowJobs, (key, value) =>
@@ -257,4 +260,3 @@ export class CodeSessionController {
     }
 }
 
-export const codeSessionController = new CodeSessionController();

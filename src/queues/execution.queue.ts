@@ -3,7 +3,12 @@ import amqp from 'amqplib';
 const RABBITMQ_URL = process.env.RABBITMQ_URL;
 const QUEUE_NAME = 'code_execution_queue';
 
-class ExecutionQueue {
+export interface IExecutionQueue {
+    connect(): Promise<void>;
+    pushExecutionJob(executionId: string, sessionId: string, language: string, sourceCode: string): Promise<void>;
+}
+
+export class ExecutionQueue implements IExecutionQueue {
     private channel: any = null;
     private connection: any = null;
 

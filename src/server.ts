@@ -1,8 +1,12 @@
 import express from "express";
 import rateLimit from "express-rate-limit";
-import { codeSessionController } from "./controllers/codeSession.controller";
+import { CodeSessionController } from "./controllers/codeSession.controller";
+import { codeSessionService } from "./services/codeSession.service";
+import { executionService } from "./services/execution.service";
 import { executionQueue } from "./queues/execution.queue";
 import { setupSwagger } from "./swagger";
+
+const codeSessionController = new CodeSessionController(codeSessionService, executionService);
 
 const app = express();
 const port = process.env.PORT || 3000;
@@ -17,11 +21,11 @@ const runRateLimiter = rateLimit({
     message: { error: "Too many execution requests, please try again later." }
 });
 
-app.post("/code-sessions", codeSessionController.createSession);
-app.patch("/code-sessions/:session_id", codeSessionController.updateSession);
-app.post("/code-sessions/:session_id/run", runRateLimiter, codeSessionController.runSession);
-app.get("/executions/slow-jobs", codeSessionController.getSlowJobs);
-app.get("/executions/:execution_id", codeSessionController.getExecution);
+app.post("/code-sessions", (req, res) => codeSessionController.createSession(req, res));
+app.patch("/code-sessions/:session_id", (req, res) => codeSessionController.updateSession(req, res));
+app.post("/code-sessions/:session_id/run", runRateLimiter, (req, res) => codeSessionController.runSession(req, res));
+app.get("/executions/slow-jobs", (req, res) => codeSessionController.getSlowJobs(req, res));
+app.get("/executions/:execution_id", (req, res) => codeSessionController.getExecution(req, res));
 
 app.listen(port, async () => {
     console.log(`Server is running on port ${port}`);
