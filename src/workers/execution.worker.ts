@@ -20,6 +20,8 @@ class ExecutionWorker {
     private channel: any = null;
     private isShuttingDown: boolean = false;
     private reconnectDelay: number = RECONNECT_INITIAL_DELAY_MS;
+    private reconnectTimer: NodeJS.Timeout | null = null;
+    private isConnecting: boolean = false;
 
     constructor(
         private readonly executionRepo: IExecutionRepository,
@@ -27,12 +29,18 @@ class ExecutionWorker {
     ) { }
 
     async start() {
-        if (this.isShuttingDown) return;
+        if (this.isShuttingDown || this.isConnecting) return;
+        this.isConnecting = true;
 
         try {
             logger.info('Connecting to RabbitMQ...');
-            this.connection = await amqp.connect(RABBITMQ_URL);
+            let amqpUrl = RABBITMQ_URL;
+            if (!amqpUrl.includes('heartbeat=')) {
+                amqpUrl += (amqpUrl.includes('?') ? '&' : '?') + 'heartbeat=60';
+            }
+            this.connection = await amqp.connect(amqpUrl);
 
+            this.isConnecting = false;
             // Reset reconnect delay on successful connect
             this.reconnectDelay = RECONNECT_INITIAL_DELAY_MS;
 
@@ -82,7 +90,7 @@ class ExecutionWorker {
             this.channel.consume(QUEUE_NAME, async (msg: any) => {
                 if (this.isShuttingDown) {
                     logger.info("Worker is shutting down. Requeueing received message.");
-                    this.channel.nack(msg, false, true);
+                    try { this.channel?.nack(msg, false, true); } catch (e) { }
                     return;
                 }
 
@@ -95,7 +103,7 @@ class ExecutionWorker {
 
                     try {
                         await this.processJob(payload);
-                        this.channel.ack(msg);
+                        try { this.channel?.ack(msg); } catch (e) { }
                     } catch (error: any) {
                         logger.error({ executionId: payload.executionId, err: error }, `Job failed processing systematically`);
 
@@ -103,32 +111,39 @@ class ExecutionWorker {
                             logger.warn({ executionId: payload.executionId }, `Job exceeded max retries. Sending to Dead Letter Queue (DLQ).`);
 
                             // Mark DB as definitely FAILED
-                            await this.executionRepo.update(payload.executionId, {
-                                status: ExecutionStatus.FAILED,
-                                stderr: String(error.message).slice(0, 5000),
-                                completedAt: new Date()
-                            });
+                            try {
+                                await this.executionRepo.update(payload.executionId, {
+                                    status: ExecutionStatus.FAILED,
+                                    stderr: String(error.message).slice(0, 5000),
+                                    completedAt: new Date()
+                                });
+                            } catch (e) {
+                                logger.error({ err: e }, 'Failed to mark execution job as failed in DB.');
+                            }
 
                             // Reject without requeue -> rabbitmq moves it to DLX -> DLQ
-                            this.channel.nack(msg, false, false);
+                            try { this.channel?.nack(msg, false, false); } catch (e) { }
                         } else {
                             logger.info({ executionId: payload.executionId, nextRetry: retryCount + 1 }, `Requeueing job for retry`);
 
                             // Republish with incremented retry count
                             const newHeaders = { ...headers, 'x-retry-count': retryCount + 1 };
-                            this.channel.sendToQueue(QUEUE_NAME, msg.content, {
-                                persistent: true,
-                                headers: newHeaders
-                            });
+                            try {
+                                this.channel?.sendToQueue(QUEUE_NAME, msg.content, {
+                                    persistent: true,
+                                    headers: newHeaders
+                                });
 
-                            // Ack the old one so it leaves front of line
-                            this.channel.ack(msg);
+                                // Ack the old one so it leaves front of line
+                                this.channel?.ack(msg);
+                            } catch (e) { }
                         }
                     }
                 }
             }, { noAck: false });
 
         } catch (error) {
+            this.isConnecting = false;
             logger.error({ err: error }, 'Failed to start worker. Will attempt to reconnect...');
             this.scheduleReconnect();
         }
@@ -136,14 +151,22 @@ class ExecutionWorker {
 
     private scheduleReconnect() {
         if (this.isShuttingDown) return;
+        if (this.reconnectTimer) return; // Prevent multiple concurrent reconnect attempts
 
         // Clean up old connection/channel references
-        this.channel = null;
-        this.connection = null;
+        if (this.channel) {
+            try { this.channel.close(); } catch (e) { }
+            this.channel = null;
+        }
+        if (this.connection) {
+            try { this.connection.close(); } catch (e) { }
+            this.connection = null;
+        }
 
         logger.info({ retryInMs: this.reconnectDelay }, `Scheduling reconnect...`);
 
-        setTimeout(() => {
+        this.reconnectTimer = setTimeout(() => {
+            this.reconnectTimer = null;
             this.start();
         }, this.reconnectDelay);
 

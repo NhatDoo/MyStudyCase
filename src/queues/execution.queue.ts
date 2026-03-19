@@ -18,7 +18,23 @@ export class ExecutionQueue implements IExecutionQueue {
     async connect() {
         if (this.channel) return;
         try {
-            this.connection = await amqp.connect(RABBITMQ_URL);
+            let amqpUrl = RABBITMQ_URL;
+            if (!amqpUrl.includes('heartbeat=')) {
+                amqpUrl += (amqpUrl.includes('?') ? '&' : '?') + 'heartbeat=60';
+            }
+            this.connection = await amqp.connect(amqpUrl);
+
+            this.connection.on('error', (err: any) => {
+                logger.error({ err }, 'RabbitMQ App connection error');
+                this.channel = null;
+                this.connection = null;
+            });
+            this.connection.on('close', () => {
+                logger.warn('RabbitMQ App connection closed');
+                this.channel = null;
+                this.connection = null;
+            });
+
             this.channel = await this.connection.createChannel();
 
             // 1. Assert Dead Letter Exchange (DLX)
@@ -40,6 +56,8 @@ export class ExecutionQueue implements IExecutionQueue {
             });
             logger.info("Connected to RabbitMQ and DLQ assigned successfully");
         } catch (error) {
+            this.channel = null;
+            this.connection = null;
             logger.error({ err: error }, "Failed to connect to RabbitMQ");
             // In production we should retry or exit.
         }
